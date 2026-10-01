@@ -1,0 +1,40 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+# ==================== Block Access to Sensitive Files ====================
+
+# Block .env
+<FilesMatch "^\.env">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Block sensitive extensions
+<FilesMatch "\.(env|log|sqlite|md|json|lock|yml|yaml|xml|bak)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Block hidden files
+<FilesMatch "^\.">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Block sensitive directories
+RedirectMatch 403 ^/(storage|database|config|app|bootstrap|vendor|routes|resources)/.*$
+
+# ==================== Security Headers ====================
+
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# ==================== Disable Directory Listing ====================
+
+Options -Indexes

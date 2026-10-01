@@ -1,0 +1,193 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
+use App\Models\User;
+
+class DailyChallengeController extends Controller
+{
+    public function index()
+    {
+        $user = Auth::user();
+        
+        // توليد تحدي اليوم بناءً على تاريخ اليوم
+        $today = date('Y-m-d');
+        $seed = crc32($today);
+        mt_srand($seed);
+        
+        // مكتبة الأسئلة
+        $questionBank = [
+            [
+                'id' => 1,
+                'question' => 'Is this email a phishing attempt?',
+                'detail' => 'From: secure@amaz0n-support.com - "Your account has been locked."',
+                'correct_answer' => true,
+                'points' => 50,
+                'icon' => '📧',
+            ],
+            [
+                'id' => 2,
+                'question' => 'Which password is strongest?',
+                'options' => ['password123', 'Tr3@sur3-Hunt3r!', 'qwerty', '123456'],
+                'correct_answer' => 1,
+                'points' => 50,
+                'icon' => '🔑',
+            ],
+            [
+                'id' => 3,
+                'question' => 'Should you share your password with a coworker?',
+                'detail' => 'Your colleague says they need your password to access a shared file.',
+                'correct_answer' => false,
+                'points' => 50,
+                'icon' => '🔒',
+            ],
+            [
+                'id' => 4,
+                'question' => 'Is this link safe?',
+                'detail' => 'http://paypa1-secure-login.com/verify',
+                'correct_answer' => false,
+                'points' => 50,
+                'icon' => '🔗',
+            ],
+            [
+                'id' => 5,
+                'question' => 'What should you do after a suspicious call?',
+                'options' => ['Ignore it', 'Report to IT', 'Call back the number', 'Share details with colleagues'],
+                'correct_answer' => 1,
+                'points' => 50,
+                'icon' => '📞',
+            ],
+            [
+                'id' => 6,
+                'question' => 'Is two-factor authentication important?',
+                'detail' => '2FA adds an extra layer of security to your accounts.',
+                'correct_answer' => true,
+                'points' => 50,
+                'icon' => '🛡️',
+            ],
+            [
+                'id' => 7,
+                'question' => 'Is it safe to use the same password everywhere?',
+                'detail' => 'Using one password for all accounts.',
+                'correct_answer' => false,
+                'points' => 50,
+                'icon' => '⚠️',
+            ],
+            [
+                'id' => 8,
+                'question' => 'Should you click unsubscribe on suspicious emails?',
+                'detail' => 'Suspicious emails often use fake unsubscribe links to confirm your email is active.',
+                'correct_answer' => false,
+                'points' => 50,
+                'icon' => '📧',
+            ],
+        ];
+        
+        // اختيار 3 أسئلة عشوائية لليوم
+        $dailyChallenges = [];
+        $selectedIndexes = array_rand($questionBank, min(3, count($questionBank)));
+        
+        if (!is_array($selectedIndexes)) {
+            $selectedIndexes = [$selectedIndexes];
+        }
+        
+        foreach ($selectedIndexes as $index) {
+            $dailyChallenges[] = $questionBank[$index];
+        }
+        
+        // التحقق من إجابة المستخدم اليوم
+        $answeredToday = false;
+        try {
+            $answeredToday = DB::table('daily_challenge_answers')
+                ->where('user_id', $user->id)
+                ->where('challenge_date', $today)
+                ->exists();
+        } catch (\Exception $e) {
+            $answeredToday = false;
+        }
+        
+        $streakDays = $user->streak_days ?? 0;
+        
+        return view('challenges.index', compact('dailyChallenges', 'answeredToday', 'streakDays', 'today'));
+    }
+    
+    public function submit(Request $request)
+    {
+        $isCorrect = $request->input('is_correct', false);
+        $user = User::find(Auth::id());
+        $today = date('Y-m-d');
+        
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'User not found']);
+        }
+        
+        // التحقق إذا كان قد أجاب اليوم
+        try {
+            $alreadyAnswered = DB::table('daily_challenge_answers')
+                ->where('user_id', $user->id)
+                ->where('challenge_date', $today)
+                ->exists();
+            
+            if ($alreadyAnswered) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You already answered today! Come back tomorrow.',
+                ]);
+            }
+            
+            // حفظ الإجابة
+            DB::table('daily_challenge_answers')->insert([
+                'user_id' => $user->id,
+                'challenge_date' => $today,
+                'is_correct' => $isCorrect,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            
+            if ($isCorrect) {
+                $currentXP = $user->xp_points ?? 0;
+                $newXP = $currentXP + 50;
+                $newStreak = ($user->streak_days ?? 0) + 1;
+                
+                $user->update([
+                    'xp_points' => $newXP,
+                    'streak_days' => $newStreak,
+                ]);
+                
+                $user->updateSecurityRank();
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => '+50 XP! Streak: ' . $newStreak . ' days | Total XP: ' . $newXP,
+                ]);
+            } else {
+                $user->update(['streak_days' => 0]);
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Wrong answer! Streak reset. Try again tomorrow!',
+                ]);
+            }
+            
+        } 
+     // حفظ الخطأ في Mistake Vault
+DB::table('user_mistakes')->insert([
+    'user_id' => $user->id,
+    'challenge_id' => $challenge->id,
+    'category' => $challenge->difficulty,
+    'question' => $challenge->question,
+    'user_answer' => 'Wrong answer',
+    'correct_answer' => 'Correct answer',
+    'created_at' => now(),
+    'updated_at' => now(),
+]);
+
+
+catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()]);
+        }
+    }
+}
