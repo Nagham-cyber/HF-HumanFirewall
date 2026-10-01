@@ -5,6 +5,15 @@ use Illuminate\Http\Request;
 
 define('LARAVEL_START', microtime(true));
 
+// فك ضغط vendor.zip إذا لم يكن vendor موجوداً
+if (!file_exists(__DIR__ . '/../vendor/autoload.php') && file_exists(__DIR__ . '/../vendor.zip')) {
+    $zip = new ZipArchive;
+    if ($zip->open(__DIR__ . '/../vendor.zip') === TRUE) {
+        $zip->extractTo(__DIR__ . '/../');
+        $zip->close();
+    }
+}
+
 // Determine if the application is in maintenance mode...
 if (file_exists($maintenance = __DIR__.'/../storage/framework/maintenance.php')) {
     require $maintenance;
